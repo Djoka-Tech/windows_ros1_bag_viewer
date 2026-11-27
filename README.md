@@ -2,14 +2,14 @@
 
 # BagViewer
 
-**by Djoka Technologies** · version 1.7.1 · [release notes](RELEASE_NOTES.md)
+**by Djoka Technologies** · version 1.9.3 · [release notes](RELEASE_NOTES.md)
 
 Portable **ROS1** rosbag viewer (Kinetic and later) for Windows, in the spirit of RViz.
 A single `BagViewer.exe` file (about 57 MB): nothing to install, no ROS, no Python.
 100% local processing: the bag is read on the computer and its data never leaves it. The only network
 access is the update check on GitHub (see [Updates](#updates)).
 
-Requirements: Windows 10 or 11, 64-bit. A graphics card is not required (see below).
+Requirements: Windows 10 (version 1607 or later) or 11, or Windows Server 2016 or later, 64-bit. A graphics card is not required (see below).
 
 ## Usage
 
@@ -101,6 +101,17 @@ path or the whole message.
 | VDA Order | `vda5050_msgs/Order`: nodes, edges (NURBS trajectories), base / horizon, progress, node actions |
 | VDA State | `vda5050_msgs/State`: AGV position and heading, deviation range, remaining route, mode / battery / errors |
 | Map image | an image file of the site (PNG, JPEG, PGM, BMP, TIFF) or a `map_server` `.yaml`, under the scene |
+| PointCloud2 | `sensor_msgs/PointCloud2` (e.g. `/accerion/map`, the Accerion signature map): colour by a field, heading arrows, decay time |
+
+### Point clouds (`sensor_msgs/PointCloud2`)
+
+- **Color by**: *auto* uses the `rgb` colours of the cloud if any, else a category field (e.g. `cluster_id`:
+  one colour per cluster), else `intensity`; or choose *flat* or any field (integer fields: one colour per
+  value; real fields: rainbow from the 1st to the 99th percentile).
+- **Heading arrows from**: a field with the direction of each point, in degrees or radians (*auto*: `th`,
+  `theta`, `yaw` or `heading`); one arrow about every 3 arrow lengths. For `/accerion/map`, the `th` of
+  the signatures.
+- *Decay time* keeps the clouds of the last seconds, like the laser scans.
 
 ### Map image (background map)
 
@@ -197,6 +208,52 @@ displays and playback stay on A.
   (*n curve(s) not in B*). *File > Close comparison bag* or ✕ on the bar closes B; profiles keep only the
   A curves.
 
+### Live robot
+
+**File > Connect to a robot (live)…** (Ctrl+L) shows the data of a running robot, like a bag that grows:
+displays, TF, plots, Messages and Inspector work as with a bag file.
+
+- Enter the robot address and the SSH user, then either:
+  - an **SSH key file** (private key, OpenSSH or PEM format) and its **passphrase** if it has one. The
+    passphrase only decrypts the key on your PC; it is not sent to the robot. An OpenSSH certificate next to
+    the key (`<key>-cert.pub`) is used too. PuTTY keys (`.ppk`) must be exported once with PuTTYgen
+    (*Conversions > Export OpenSSH key*);
+  - or a **password**;
+  - or nothing: the keys of `~/.ssh` and the SSH agent (Pageant, OpenSSH agent) are tried.
+
+  *Remember the password / passphrase* stores it encrypted for your Windows account.
+- **ROS container**: when ROS runs in Docker, BagViewer finds the container where ROS is installed
+  (containers named `ros…` first), or use the name you enter. Choose *(none)* when ROS runs on the robot
+  itself. The SSH user must be allowed to use Docker (member of the `docker` group).
+- The relay starts in the same environment as a terminal on the robot (interactive shell: `~/.bashrc` is
+  read). If ROS needs more, **ROS setup** takes shell commands run before it, e.g.
+  `source ~/catkin_ws/devel/setup.bash` or `export ROS_MASTER_URI=http://localhost:11311`. The topics
+  dialog shows which ROS master answered; few topics usually mean the wrong environment or container.
+- On the first connection to a robot, its SSH key fingerprint is shown: accept it once; a robot that later
+  presents another key is refused (the known keys are in `known_hosts`, next to the settings).
+- Then choose the **topics** to receive. TF is always received. Laser scans (5 Hz), point clouds (1 Hz)
+  and occupancy grids (1 Hz) are limited in rate by default to spare the Wi-Fi; images are off. The choice is
+  remembered per robot; *File > Live topics…* (Ctrl+Shift+L, or *Topics…* in the status bar) adds or removes topics
+  during the session, including topics started on the robot after the connection.
+
+How it works: BagViewer starts a small relay in the ROS container (`docker exec`, Python 2 or 3, using only
+`rospy`). The relay subscribes to the chosen topics on the robot, where the ROS master listens on
+127.0.0.1, and sends the messages, still serialized, through the SSH connection. Nothing is installed or
+written on the robot, and the relay stops when you disconnect or when the connection is lost.
+
+While connected:
+- The **LIVE** button (red when following) and **L** show the latest data. Space pauses: you can then look
+  back with the timeline, the plots or the Inspector while the data keeps arriving.
+- The last *Keep the last* minutes (10 by default, at most 1 GB) are kept in memory; older data is
+  forgotten. **File > Save live buffer as .bag…** writes what was received (only the start-end window if
+  one is set). The bag can be opened in BagViewer, RViz or `rosbag`.
+- The status bar shows the message rate, the bandwidth and the memory used. *dropped* messages mean that the
+  network is too slow for the chosen topics: lower their rates.
+- *File > Disconnect from the robot*: the data received stays open, like a bag.
+
+*File > Simulate a live robot with a bag (test)…* plays a bag file as if it came from a robot, to try the
+live mode without a robot (`--live-replay file.bag` on the command line).
+
 ### Profiles (reloadable configurations)
 
 **Profile** menu: a profile is a `.json` file that stores the displays and their settings, the Fixed Frame,
@@ -239,7 +296,8 @@ says so. The folder build (`BagViewer_folder.zip`) is not updated in place: the 
 ## Files written
 
 `bagviewer_config.json` (displays, fixed frame, theme, active profile, window layout, recent bags and
-profiles, update preferences) and `bagviewer.log` are written next to the exe. If that folder is not writable, they go to
+profiles, update preferences, live robots) and `bagviewer.log` are written next to the exe, plus
+`known_hosts` (SSH keys of the robots accepted in live mode). If that folder is not writable, they go to
 `%APPDATA%\BagViewer`. Delete `bagviewer_config.json` to go back to the default settings.
 
 If the computer's security policy blocks executables that unpack themselves into `%TEMP%`, use
@@ -250,6 +308,8 @@ If the computer's security policy blocks executables that unpack themselves into
 ```
 BagViewer.exe [file.bag] [--compare other.bag] [--profile profile.json] [--theme dark|light]
               [--software-gl] [--3d] [--no-config] [--no-update-check]
+BagViewer.exe --live                       # opens the "Connect to a robot" dialog
+BagViewer.exe --live-replay file.bag       # live mode simulated with a bag
 BagViewer.exe file.bag --screenshot shot.png --time 30 [--zoom 20] [--center x,y]
 BagViewer.exe --help
 ```
@@ -257,25 +317,37 @@ BagViewer.exe --help
 ## Known limitations
 
 - ROS1 bags only (ROS2 `.db3` / `.mcap` are not supported).
-- Not displayed: `sensor_msgs/PointCloud2`, camera images, robot model (URDF); `MESH_RESOURCE` markers are
-  drawn as cubes. Their numeric fields can still be plotted.
+- Not displayed: camera images, `sensor_msgs/PointCloud` (the old format), robot model (URDF);
+  `MESH_RESOURCE` markers are drawn as cubes. Their numeric fields can still be plotted.
 - The messages of the bag are kept in memory, still serialized, while the bag is open (memory use is about
-  the uncompressed size of the bag). Camera images and point clouds are not: they are read from the file
-  when inspected or plotted.
+  the uncompressed size of the bag). Camera images are not: they are read from the file when inspected or
+  plotted. Bags with big 3D point clouds (3D lidars) therefore need as much memory as their size.
 
 ## Development
 
 ```
-python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
-set PYTHONPATH=src && .venv\Scripts\python -m bagviewer file.bag
-.venv\Scripts\python -m pytest tests          # generates tests\data\synthetic.bag
 powershell -ExecutionPolicy Bypass -File build.ps1   # -> dist\BagViewer.exe and dist\BagViewer_folder.zip
+set PYTHONPATH=src && .venv312\Scripts\python -m bagviewer file.bag
+.venv312\Scripts\python -m pytest tests          # generates tests\data\synthetic.bag
 ```
+
+The build uses **Python 3.12 and Qt 6.7** on purpose, so that the exe starts on Windows 10 version 1607 and
+Windows Server 2016 (build 14393):
+
+- Qt 6.10 and newer import `icuuc.dll`, which exists from Windows 10 version 1703 only;
+- Qt 6.8 and 6.9 import `SetThreadDescription` from `kernel32.dll`, which the `kernel32.dll` of build 14393
+  does not export (*The specified procedure could not be found*);
+- PySide6 6.7 exists for Python 3.12 at most.
+
+`build.ps1` takes Python 3.12 from its official NuGet package, unpacked in `.py312` (nothing is installed on
+the PC; the signature of `python.exe` is checked), and creates `.venv312`. Before upgrading PySide6, check
+that its Qt DLLs import nothing that build 14393 lacks.
 
 Code in `src/bagviewer/`: `bag_loader.py` (bag reading with `rosbags`), `tf_buffer.py` (interpolated TF
 tree), `displays/` (one file per display family), `ui/main_window.py` (main window),
-`glsetup.py` (points PyOpenGL at Qt's OpenGL DLL), `updater.py` + `ui/update_dialog.py` (self-update).
+`glsetup.py` (points PyOpenGL at Qt's OpenGL DLL), `updater.py` + `ui/update_dialog.py` (self-update),
+`live/` (live mode: `relay_script.py` runs on the robot, `protocol.py`, `sources.py` (SSH, replay),
+`livebag.py`) + `ui/live.py`. `relay_script.py` must stay compatible with Python 2.7 (ROS Kinetic).
 
 ## Publishing a release
 
